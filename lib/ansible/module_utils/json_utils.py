@@ -28,6 +28,7 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import json
+import sys
 
 
 # NB: a copy of this function exists in ../../modules/core/async_wrapper.py. Ensure any
@@ -42,8 +43,17 @@ def _filter_non_json_lines(data):
     '''
     warnings = []
 
+    # if sys.platform == "OpenVMS":
+    data = data.replace("\r\n", "")
     # Filter initial junk
+    #lines = data.split('\r\n\r')
     lines = data.splitlines()
+
+    # for start, line in enumerate(lines):
+    #     line = line.replace("\r\n", "")
+    # else:
+    #     # Filter initial junk
+    #     lines = data.splitlines()
 
     for start, line in enumerate(lines):
         line = line.strip()
