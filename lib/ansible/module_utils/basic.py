@@ -1991,7 +1991,7 @@ class AnsibleModule(object):
         self.params = _load_params()
 
     def _log_to_syslog(self, msg):
-        if HAS_SYSLOG:
+        if HAS_SYSLOG and sys.platform != "OpenVMS":
             module = 'ansible-%s' % self._name
             facility = getattr(syslog, self._syslog_facility, syslog.LOG_USER)
             syslog.openlog(str(module), 0, facility)
@@ -2605,6 +2605,10 @@ class AnsibleModule(object):
             self.fail_json(rc=257, cmd=args, msg=msg)
 
         shell = False
+
+        if sys.platform == "OpenVMS":
+            shell = True
+
         if use_unsafe_shell:
 
             # stringify args for unsafe/direct shell usage
@@ -2699,6 +2703,8 @@ class AnsibleModule(object):
             kwargs["pass_fds"] = pass_fds
         elif PY2 and pass_fds:
             kwargs['close_fds'] = False
+        if sys.platform == "OpenVMS":
+            kwargs['preexec_fn'] = None
 
         # store the pwd
         prev_dir = os.getcwd()
@@ -2732,60 +2738,68 @@ class AnsibleModule(object):
 
             stdout = b''
             stderr = b''
-            try:
-                selector = selectors.DefaultSelector()
-            except OSError:
-                # Failed to detect default selector for the given platform
-                # Select PollSelector which is supported by major platforms
-                selector = selectors.PollSelector()
 
-            selector.register(cmd.stdout, selectors.EVENT_READ)
-            selector.register(cmd.stderr, selectors.EVENT_READ)
-            if os.name == 'posix':
-                fcntl.fcntl(cmd.stdout.fileno(), fcntl.F_SETFL, fcntl.fcntl(cmd.stdout.fileno(), fcntl.F_GETFL) | os.O_NONBLOCK)
-                fcntl.fcntl(cmd.stderr.fileno(), fcntl.F_SETFL, fcntl.fcntl(cmd.stderr.fileno(), fcntl.F_GETFL) | os.O_NONBLOCK)
+            if sys.platform != "OpenVMS":
+                try:
+                    selector = selectors.DefaultSelector()
+                except (IOError, OSError):
+                    # Failed to detect default selector for the given platform
+                    # Select PollSelector which is supported by major platforms
+                    selector = selectors.PollSelector()
 
-            if data:
-                if not binary_data:
-                    data += '\n'
-                if isinstance(data, text_type):
-                    data = to_bytes(data)
-                cmd.stdin.write(data)
-                cmd.stdin.close()
+                selector.register(cmd.stdout, selectors.EVENT_READ)
+                selector.register(cmd.stderr, selectors.EVENT_READ)
+                if os.name == 'posix':
+                    fcntl.fcntl(cmd.stdout.fileno(), fcntl.F_SETFL, fcntl.fcntl(cmd.stdout.fileno(), fcntl.F_GETFL) | os.O_NONBLOCK)
+                    fcntl.fcntl(cmd.stderr.fileno(), fcntl.F_SETFL, fcntl.fcntl(cmd.stderr.fileno(), fcntl.F_GETFL) | os.O_NONBLOCK)
 
-            while True:
-                events = selector.select(1)
-                for key, event in events:
-                    b_chunk = key.fileobj.read()
-                    if b_chunk == b(''):
-                        selector.unregister(key.fileobj)
-                    if key.fileobj == cmd.stdout:
-                        stdout += b_chunk
-                    elif key.fileobj == cmd.stderr:
-                        stderr += b_chunk
-                # if we're checking for prompts, do it now
-                if prompt_re:
-                    if prompt_re.search(stdout) and not data:
-                        if encoding:
-                            stdout = to_native(stdout, encoding=encoding, errors=errors)
-                        return (257, stdout, "A prompt was encountered while running a command, but no input data was specified")
-                # only break out if no pipes are left to read or
-                # the pipes are completely read and
-                # the process is terminated
-                if (not events or not selector.get_map()) and cmd.poll() is not None:
-                    break
-                # No pipes are left to read but process is not yet terminated
-                # Only then it is safe to wait for the process to be finished
-                # NOTE: Actually cmd.poll() is always None here if no selectors are left
-                elif not selector.get_map() and cmd.poll() is None:
-                    cmd.wait()
-                    # The process is terminated. Since no pipes to read from are
-                    # left, there is no need to call select() again.
-                    break
+                if data:
+                    if not binary_data:
+                        data += '\n'
+                    if isinstance(data, text_type):
+                        data = to_bytes(data)
+                    cmd.stdin.write(data)
+                    cmd.stdin.close()
 
-            cmd.stdout.close()
-            cmd.stderr.close()
-            selector.close()
+                while True:
+                    events = selector.select(1)
+                    for key, event in events:
+                        b_chunk = key.fileobj.read()
+                        if b_chunk == b(''):
+                            selector.unregister(key.fileobj)
+                        if key.fileobj == cmd.stdout:
+                            stdout += b_chunk
+                        elif key.fileobj == cmd.stderr:
+                            stderr += b_chunk
+                    # if we're checking for prompts, do it now
+                    if prompt_re:
+                        if prompt_re.search(stdout) and not data:
+                            if encoding:
+                                stdout = to_native(stdout, encoding=encoding, errors=errors)
+                            return (257, stdout, "A prompt was encountered while running a command, but no input data was specified")
+                    # only break out if no pipes are left to read or
+                    # the pipes are completely read and
+                    # the process is terminated
+                    if (not events or not selector.get_map()) and cmd.poll() is not None:
+                        break
+                    # No pipes are left to read but process is not yet terminated
+                    # Only then it is safe to wait for the process to be finished
+                    # NOTE: Actually cmd.poll() is always None here if no selectors are left
+                    elif not selector.get_map() and cmd.poll() is None:
+                        cmd.wait()
+                        # The process is terminated. Since no pipes to read from are
+                        # left, there is no need to call select() again.
+                        break
+
+                cmd.stdout.close()
+                cmd.stderr.close()
+                selector.close()
+            else:
+                out, err = cmd.communicate()
+                if out != None:
+                    stdout += out
+                if err != None:
+                    stderr += err
 
             rc = cmd.returncode
         except (OSError, IOError) as e:
