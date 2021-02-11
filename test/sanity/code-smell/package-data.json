@@ -1,0 +1,6 @@
+{
+    "intercept": true,
+    "disabled": true,
+    "all_targets": true,
+    "output": "path-message"
+}
