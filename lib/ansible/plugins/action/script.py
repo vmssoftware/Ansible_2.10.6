@@ -102,7 +102,11 @@ class ActionModule(ActionBase):
                 # Once everything is encoded consistently, replace the script path on the remote
                 # system with the remainder of the raw_params. This preserves quoting in parameters
                 # that would have been removed by shlex.split().
-                target_command = to_text(raw_params).strip().replace(parts[0], tmp_src)
+                if getattr(self._connection._shell, "_IS_OPENVMS", False) and not executable:
+                    tmp_src_vms = self._connection._shell.unix2vms_path(self._connection._shell.tmpdir) + os.path.basename(source)
+                    target_command = to_text(raw_params).strip().replace(parts[0], tmp_src_vms)
+                else:
+                    target_command = to_text(raw_params).strip().replace(parts[0], tmp_src)
 
                 self._transfer_file(source, tmp_src)
 
@@ -116,6 +120,8 @@ class ActionModule(ActionBase):
                 if executable:
                     script_cmd = ' '.join([env_string, executable, target_command])
                 else:
+                    if getattr(self._connection._shell, "_IS_OPENVMS", False):
+                        target_command = '@' + target_command
                     script_cmd = ' '.join([env_string, target_command])
 
             if self._play_context.check_mode:
