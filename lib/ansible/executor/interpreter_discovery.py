@@ -60,14 +60,17 @@ def discover_interpreter(action, interpreter_name, discovery_mode, task_vars):
 
         display.vvv(msg=u"Attempting {0} interpreter discovery".format(interpreter_name), host=host)
 
-        # not all command -v impls accept a list of commands, so we have to call it once per python
-        command_list = ["command -v '%s'" % py for py in bootstrap_python_list]
-        shell_bootstrap = "echo PLATFORM; uname; echo FOUND; {0}; echo ENDFOUND".format('; '.join(command_list))
+        if getattr(action._connection._shell, "_IS_OPENVMS", False):
+            shell_bootstrap = 'WRITE SYS$OUTPUT "PLATFORM" ; SHOW SYSTEM/NOPROCESS ; WRITE SYS$OUTPUT "FOUND" ; SHOW SYMBOL python* ; WRITE SYS$OUTPUT "ENDFOUND"'
+        else:
+            # not all command -v impls accept a list of commands, so we have to call it once per python
+            command_list = ["command -v '%s'" % py for py in bootstrap_python_list]
+            shell_bootstrap = "echo PLATFORM; uname; echo FOUND; {0}; echo ENDFOUND".format('; '.join(command_list))
 
         # FUTURE: in most cases we probably don't want to use become, but maybe sometimes we do?
         res = action._low_level_execute_command(shell_bootstrap, sudoable=False)
 
-        raw_stdout = res.get('stdout', u'')
+        raw_stdout = res.get('stdout', u'').strip()
 
         match = foundre.match(raw_stdout)
 
@@ -77,7 +80,10 @@ def discover_interpreter(action, interpreter_name, discovery_mode, task_vars):
 
         platform_type = match.groups()[0].lower().strip()
 
-        found_interpreters = [interp.strip() for interp in match.groups()[1].splitlines() if interp.startswith('/')]
+        if getattr(action._connection._shell, "_IS_OPENVMS", False):
+            found_interpreters = [interp.strip().split(" ")[0] for interp in match.groups()[1].splitlines() if interp.strip().startswith('PYTHON')]
+        else:
+            found_interpreters = [interp.strip() for interp in match.groups()[1].splitlines() if interp.startswith('/')]
 
         display.debug(u"found interpreters: {0}".format(found_interpreters), host=host)
 
