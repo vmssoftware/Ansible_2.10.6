@@ -71,6 +71,7 @@ REPLACER = b"#<<INCLUDE_ANSIBLE_MODULE_COMMON>>"
 REPLACER_VERSION = b"\"<<ANSIBLE_VERSION>>\""
 REPLACER_COMPLEX = b"\"<<INCLUDE_ANSIBLE_MODULE_COMPLEX_ARGS>>\""
 REPLACER_WINDOWS = b"# POWERSHELL_COMMON"
+REPLACER_OPENVMS = b"$! DCL"
 REPLACER_JSONARGS = b"<<INCLUDE_ANSIBLE_MODULE_JSON_ARGS>>"
 REPLACER_SELINUX = b"<<SELINUX_SPECIAL_FILESYSTEMS>>"
 
@@ -1057,6 +1058,9 @@ def _find_module_utils(module_name, b_module_data, module_path, module_args, tas
         module_style = 'new'
         module_substyle = 'powershell'
         b_module_data = b_module_data.replace(REPLACER_WINDOWS, b'#Requires -Module Ansible.ModuleUtils.Legacy')
+    elif REPLACER_OPENVMS in b_module_data:
+        module_style = 'new'
+        module_substyle = 'dcl'
     elif re.search(b'#Requires -Module', b_module_data, re.IGNORECASE) \
             or re.search(b'#Requires -Version', b_module_data, re.IGNORECASE)\
             or re.search(b'#AnsibleRequires -OSVersion', b_module_data, re.IGNORECASE) \
@@ -1244,6 +1248,9 @@ def _find_module_utils(module_name, b_module_data, module_path, module_args, tas
             become_flags, module_substyle, task_vars, remote_module_fqn
         )
 
+    elif module_substyle == 'dcl':
+        shebang = u'$!'
+
     elif module_substyle == 'jsonargs':
         module_args_json = to_bytes(json.dumps(module_args, cls=AnsibleJSONEncoder, vault_to_text=True))
 
@@ -1323,6 +1330,10 @@ def modify_module(module_name, module_path, module_args, templar, task_vars=None
                 b_lines.insert(1, b_ENCODING_STRING)
 
             shebang = to_text(b_shebang, nonstring='passthru', errors='surrogate_or_strict')
+
+        elif b_lines[0].startswith(b"$ ") or b_lines[0].startswith(b"$\t"):
+            interpreter = "dcl"
+
         else:
             # No shebang, assume a binary module?
             pass
