@@ -731,6 +731,9 @@ class ActionBase(with_metaclass(ABCMeta, object)):
         if '..' in os.path.dirname(expanded).split('/'):
             raise AnsibleError("'%s' returned an invalid relative home directory path containing '..'" % self._play_context.remote_addr)
 
+        if getattr(self._connection._shell, "_IS_OPENVMS", False):
+            expanded = expanded.replace(':[', '/').replace(']', '')
+
         return expanded
 
     def _strip_success_message(self, data):
