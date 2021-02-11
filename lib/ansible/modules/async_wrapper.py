@@ -25,15 +25,17 @@ from ansible.module_utils._text import to_text, to_bytes
 
 PY3 = sys.version_info[0] == 3
 
-syslog.openlog('ansible-%s' % os.path.basename(__file__))
-syslog.syslog(syslog.LOG_NOTICE, 'Invoked with %s' % " ".join(sys.argv[1:]))
+if sys.platform != "OpenVMS":
+    syslog.openlog('ansible-%s' % os.path.basename(__file__))
+    syslog.syslog(syslog.LOG_NOTICE, 'Invoked with %s' % " ".join(sys.argv[1:]))
 
 # pipe for communication between forked process and parent
 ipc_watcher, ipc_notifier = multiprocessing.Pipe()
 
 
 def notice(msg):
-    syslog.syslog(syslog.LOG_NOTICE, msg)
+    if sys.platform != "OpenVMS":
+        syslog.syslog(syslog.LOG_NOTICE, msg)
 
 
 def daemonize_self():
