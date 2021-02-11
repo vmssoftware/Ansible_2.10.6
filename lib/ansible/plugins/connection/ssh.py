@@ -1082,7 +1082,28 @@ class Connection(ConnectionBase):
                 raise AnsibleConnectionFailure('Data could not be sent to remote host "%s". Make sure this host can be reached over ssh: %s'
                                                % (self.host, additional))
 
+        if getattr(self._shell, "_IS_OPENVMS", False):
+            p.returncode, b_stdout = self.get_status(p.returncode, b_stdout)
+
         return (p.returncode, b_stdout, b_stderr)
+
+    def get_status(self, returncode, stdout):
+
+        if returncode == 0:
+            matched = re.match(r'(\n?\r\n.+)*(\r\n\s+\$STATUS == \"%X([0-9a-fA-F]+)\")', stdout.decode("utf-8"))
+
+            if matched:
+                str_status = matched.group(2)
+                stdout = stdout.decode("utf-8").replace(str_status, "")
+                status = matched.group(3)
+                num = int(status, 16)
+                self._shell.vms_status = num
+
+                if num & 1 == 0: #error
+                    returncode = num
+                return returncode, stdout
+
+        return returncode, stdout
 
     @_ssh_retry
     def _run(self, cmd, in_data, sudoable=True, checkrc=True):

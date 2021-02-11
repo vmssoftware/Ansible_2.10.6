@@ -1115,6 +1115,9 @@ class ActionBase(with_metaclass(ABCMeta, object)):
             if executable:
                 cmd = executable + ' -c ' + shlex_quote(cmd)
 
+        if getattr(self._connection._shell, "_IS_OPENVMS", False):
+            cmd = self._connection._shell.pipe_extend_command(cmd)
+
         display.debug("_low_level_execute_command(): executing: %s" % (cmd,))
 
         # Change directory to basedir of task for command execution when connection is local
