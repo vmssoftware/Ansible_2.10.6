@@ -88,11 +88,12 @@ class ServiceMgrFactCollector(BaseFactCollector):
             # FIXME: return code isnt checked
             # FIXME: if stdout is empty string, odd things
             # FIXME: other code seems to think we could get proc_1 == None past this point
-            rc, proc_1, err = module.run_command("ps -p 1 -o comm|tail -n 1", use_unsafe_shell=True)
-            # If the output of the command starts with what looks like a PID, then the 'ps' command
-            # probably didn't work the way we wanted, probably because it's busybox
-            if re.match(r' *[0-9]+ ', proc_1):
-                proc_1 = None
+            if platform.system() != "OpenVMS":
+                rc, proc_1, err = module.run_command("ps -p 1 -o comm|tail -n 1", use_unsafe_shell=True)
+                # If the output of the command starts with what looks like a PID, then the 'ps' command
+                # probably didn't work the way we wanted, probably because it's busybox
+                if re.match(r' *[0-9]+ ', proc_1):
+                    proc_1 = None
 
         # The ps command above may return "COMMAND" if the user cannot read /proc, e.g. with grsecurity
         if proc_1 == "COMMAND\n":
