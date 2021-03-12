@@ -46,14 +46,7 @@ def _filter_non_json_lines(data):
     # if sys.platform == "OpenVMS":
     data = data.replace("\r\n", "")
     # Filter initial junk
-    #lines = data.split('\r\n\r')
     lines = data.splitlines()
-
-    # for start, line in enumerate(lines):
-    #     line = line.replace("\r\n", "")
-    # else:
-    #     # Filter initial junk
-    #     lines = data.splitlines()
 
     for start, line in enumerate(lines):
         line = line.strip()
