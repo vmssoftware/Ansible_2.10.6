@@ -1286,6 +1286,9 @@ class Connection(ConnectionBase):
     def fetch_file(self, in_path, out_path):
         ''' fetch a file from remote to local '''
 
+        if getattr(self._shell, "_IS_OPENVMS", False):
+            self.reset()
+
         super(Connection, self).fetch_file(in_path, out_path)
 
         display.vvv(u"FETCH {0} TO {1}".format(in_path, out_path), host=self.host)
