@@ -634,6 +634,10 @@ def ensure_directory(path, follow, recurse, timestamps):
                     # check above. As long as it's a dir, we don't need to error out.
                     if not (ex.errno == errno.EEXIST and os.path.isdir(b_curpath)):
                         raise
+                tmp_file_args = file_args.copy()
+                tmp_file_args['path'] = path
+                changed = module.set_fs_attributes_if_different(tmp_file_args, changed, diff, expand=False)
+                changed |= update_timestamp_for_file(file_args['path'], mtime, atime, diff)
         else:
             try:
                 # Split the path so we can apply filesystem attributes recursively
@@ -749,7 +753,12 @@ def ensure_symlink(path, src, follow, force, timestamps):
                 if prev_state == 'directory':
                     os.rmdir(b_path)
                 os.symlink(b_src, b_tmppath)
+                # os.remove(b_path)
                 os.rename(b_tmppath, b_path)
+
+
+                # os.remove(b_path)
+                # os.symlink(b_src, b_path)
             except OSError as e:
                 if os.path.exists(b_tmppath):
                     os.unlink(b_tmppath)
