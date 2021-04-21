@@ -290,6 +290,12 @@ _VCS_RE = re.compile(r'(svn|git|hg|bzr)\+')
 op_dict = {">=": operator.ge, "<=": operator.le, ">": operator.gt,
            "<": operator.lt, "==": operator.eq, "!=": operator.ne, "~=": operator.ge}
 
+if sys.platform == "OpenVMS":
+    python_symbol = 'python -m '
+else:
+    python_symbol = ''
+cmd_symbol_python = ''
+
 
 def _is_vcs_url(name):
     """Test whether a name is a vcs url or not."""
@@ -403,34 +409,58 @@ def _get_pip(module, env=None, executable=None):
     if pip is None:
         if env is None:
             opt_dirs = []
-            for basename in candidate_pip_basenames:
-                pip = module.get_bin_path(basename, False, opt_dirs)
-                if pip is not None:
-                    break
+            if sys.platform == "OpenVMS":
+                pip = python_symbol + 'pip'
             else:
-                # For-else: Means that we did not break out of the loop
-                # (therefore, that pip was not found)
-                module.fail_json(msg='Unable to find any of %s to use.  pip'
-                                     ' needs to be installed.' % ', '.join(candidate_pip_basenames))
+                for basename in candidate_pip_basenames:
+                    pip = module.get_bin_path(basename, False, opt_dirs)
+                    if pip is not None:
+                        break
+                else:
+                    # For-else: Means that we did not break out of the loop
+                    # (therefore, that pip was not found)
+                    module.fail_json(msg='Unable to find any of %s to use.  pip'
+                                        ' needs to be installed.' % ', '.join(candidate_pip_basenames))
         else:
             # If we're using a virtualenv we must use the pip from the
             # virtualenv
             venv_dir = os.path.join(env, 'bin')
-            candidate_pip_basenames = (candidate_pip_basenames[0], 'pip')
-            for basename in candidate_pip_basenames:
-                candidate = os.path.join(venv_dir, basename)
-                if os.path.exists(candidate) and is_executable(candidate):
-                    pip = candidate
-                    break
+
+            if sys.platform == "OpenVMS":
+                global cmd_symbol_python
+                cmd_symbol_python = 'PIPE python_env :== $' + unix_path_to_vms(venv_dir) + 'python3.exe ; '
+                pip = 'python_env -m ' + 'pip'
             else:
-                # For-else: Means that we did not break out of the loop
-                # (therefore, that pip was not found)
-                module.fail_json(msg='Unable to find pip in the virtualenv, %s, ' % env +
-                                     'under any of these names: %s. ' % (', '.join(candidate_pip_basenames)) +
-                                     'Make sure pip is present in the virtualenv.')
+                candidate_pip_basenames = (candidate_pip_basenames[0], 'pip')
+                for basename in candidate_pip_basenames:
+                    candidate = os.path.join(venv_dir, basename)
+                    if os.path.exists(candidate) and is_executable(candidate):
+                        pip = candidate
+                        break
+                else:
+                    # For-else: Means that we did not break out of the loop
+                    # (therefore, that pip was not found)
+                    module.fail_json(msg='Unable to find pip in the virtualenv, %s, ' % env +
+                                        'under any of these names: %s. ' % (', '.join(candidate_pip_basenames)) +
+                                        'Make sure pip is present in the virtualenv.')
 
     return pip
 
+def unix_path_to_vms(path):
+    path = path.replace('.', '^.')
+    items = path.split('/')
+    path_vms = ''
+
+    for i in range(len(items)):
+        if items[i] != '':
+            if path_vms == '':
+                path_vms += items[i] + ':['
+            else:
+                if i == len(items)-1:
+                    path_vms += items[i] + ']'
+                else:
+                    path_vms += items[i] + '.'
+    return path_vms
 
 def _fail(module, cmd, out, err):
     msg = ''
@@ -453,7 +483,14 @@ def _get_package_info(module, package, env=None):
         opt_dirs = ['%s/bin' % env]
     else:
         opt_dirs = []
-    python_bin = module.get_bin_path('python', False, opt_dirs)
+    
+    if sys.platform == "OpenVMS":
+        if env:
+            python_bin = cmd_symbol_python + 'python_env'
+        else:
+            python_bin = 'python'
+    else:
+        python_bin = module.get_bin_path('python', False, opt_dirs)
 
     if python_bin is None:
         formatted_dep = None
@@ -470,12 +507,13 @@ def setup_virtualenv(module, env, chdir, out, err):
     if module.check_mode:
         module.exit_json(changed=True)
 
-    cmd = shlex.split(module.params['virtualenv_command'])
+    cmd = shlex.split(python_symbol + module.params['virtualenv_command'])
 
     # Find the binary for the command in the PATH
     # and switch the command for the explicit path.
-    if os.path.basename(cmd[0]) == cmd[0]:
-        cmd[0] = module.get_bin_path(cmd[0], True)
+    if sys.platform != "OpenVMS":
+        if os.path.basename(cmd[0]) == cmd[0]:
+            cmd[0] = module.get_bin_path(cmd[0], True)
 
     # Add the system-site-packages option if that
     # is enabled, otherwise explicitly set the option
@@ -706,7 +744,10 @@ def main():
             cmd.extend(shlex.split(extra_args))
 
         if name:
-            cmd.extend(to_native(p) for p in packages)
+            if sys.platform == "OpenVMS":
+                cmd.extend(to_native('\"' + str(p) + '\"') for p in packages)
+            else:
+                cmd.extend(to_native(p) for p in packages)
         elif requirements:
             cmd.extend(['-r', requirements])
         else:
@@ -716,10 +757,10 @@ def main():
             )
 
         if module.check_mode:
-            if extra_args or requirements or state == 'latest' or not name:
+            if (extra_args and extra_args != '--user') or requirements or state == 'latest' or not name:
                 module.exit_json(changed=True)
 
-            pkg_cmd, out_pip, err_pip = _get_packages(module, pip, chdir)
+            pkg_cmd, out_pip, err_pip = _get_packages(module, cmd_symbol_python + pip, chdir)
 
             out += out_pip
             err += err_pip
@@ -748,8 +789,9 @@ def main():
 
         out_freeze_before = None
         if requirements or has_vcs:
-            _, out_freeze_before, _ = _get_packages(module, pip, chdir)
+            _, out_freeze_before, _ = _get_packages(module, cmd_symbol_python + pip, chdir)
 
+        cmd[0] = cmd_symbol_python + cmd[0]
         rc, out_pip, err_pip = module.run_command(cmd, path_prefix=path_prefix, cwd=chdir)
         out += out_pip
         err += err_pip
@@ -765,7 +807,7 @@ def main():
             if out_freeze_before is None:
                 changed = 'Successfully installed' in out_pip
             else:
-                _, out_freeze_after, _ = _get_packages(module, pip, chdir)
+                _, out_freeze_after, _ = _get_packages(module, cmd_symbol_python + pip, chdir)
                 changed = out_freeze_before != out_freeze_after
 
         changed = changed or venv_created
