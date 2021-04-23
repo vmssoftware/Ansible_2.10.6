@@ -2795,7 +2795,13 @@ class AnsibleModule(object):
                 cmd.stderr.close()
                 selector.close()
             else:
-                out, err = cmd.communicate()
+                if data:
+                    if not binary_data:
+                        data += '\n'
+                    if isinstance(data, text_type):
+                        data = to_bytes(data)
+
+                out, err = cmd.communicate(input=data)
                 if out != None:
                     stdout += out
                 if err != None:

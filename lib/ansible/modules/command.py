@@ -204,6 +204,7 @@ import datetime
 import glob
 import os
 import shlex
+import sys
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils._text import to_native, to_bytes, to_text
@@ -289,8 +290,12 @@ def main():
     if args and argv:
         module.fail_json(rc=256, msg="only command or argv can be given, not both")
 
-    if not shell and args:
-        args = shlex.split(args)
+    if sys.platform == "OpenVMS":
+       if args:
+          args = args.split(" ")
+    else:
+        if not shell and args:
+            args = shlex.split(args)
 
     args = args or argv
 
