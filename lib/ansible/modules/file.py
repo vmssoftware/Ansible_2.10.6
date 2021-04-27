@@ -753,12 +753,7 @@ def ensure_symlink(path, src, follow, force, timestamps):
                 if prev_state == 'directory':
                     os.rmdir(b_path)
                 os.symlink(b_src, b_tmppath)
-                # os.remove(b_path)
                 os.rename(b_tmppath, b_path)
-
-
-                # os.remove(b_path)
-                # os.symlink(b_src, b_path)
             except OSError as e:
                 if os.path.exists(b_tmppath):
                     os.unlink(b_tmppath)
