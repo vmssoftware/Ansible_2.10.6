@@ -5,6 +5,7 @@ On OpenVMS:
 - Install Python for OpenVMS (version 3.8-2 or later). Refer to https://vmssoftware.com/products/python/ for the installer and the Release notes.
 - Ensure that the symbol "python" is defined in your login.com
 - Ensure that "set process/parse_style=extended in your login.com
+
 On Linux:
 --------
 - Ensure that Python is installed on your Linux system or install it from the official site (https://www.python.org/). Also, install python-paramiko, python-crypto, python-yaml, python-jinja2 packages.
