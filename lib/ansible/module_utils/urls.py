@@ -852,7 +852,7 @@ class SSLValidationHandler(urllib_request.BaseHandler):
                 self.ca_path = certifi.where()
                 paths_checked.append(self.ca_path)
             except:
-                pass
+                raise ValueError('Error certificate: You must install python package "certifi"')
 
         # fall back to a user-deployed cert in a standard
         # location if the OS platform one is not available
