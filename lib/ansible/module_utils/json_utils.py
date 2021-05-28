@@ -43,6 +43,9 @@ def _filter_non_json_lines(data):
     '''
     warnings = []
 
+    if data == "\r\n\r":
+        data = "{}"
+
     # if sys.platform == "OpenVMS":
     data = data.replace("\r\n", "")
     # Filter initial junk
