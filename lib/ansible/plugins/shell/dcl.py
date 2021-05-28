@@ -57,7 +57,7 @@ class ShellModule(ShModule):
     def env_prefix(self, **kwargs):
         env = self.env.copy()
         env.update(kwargs)
-        return ' '.join(['\n$ %s=%s' % (k, shlex_quote(text_type(v))) for k, v in env.items()])
+        return ' '.join(['%s :== "%s"' % (k, text_type(v)) for k, v in env.items()])
 
     def unix2vms_mode(self, mode):
         prot = ['S:RWED']

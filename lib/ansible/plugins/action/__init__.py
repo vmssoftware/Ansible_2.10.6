@@ -938,7 +938,7 @@ class ActionBase(with_metaclass(ABCMeta, object)):
             async_cmd = [interpreter, remote_async_module_path, async_jid, async_limit, remote_module_path]
 
             if environment_string:
-                async_cmd.insert(0, environment_string)
+                async_cmd.insert(0, environment_string + " ;")
 
             if args_file_path:
                 async_cmd.append(args_file_path)
