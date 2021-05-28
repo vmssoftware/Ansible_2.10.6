@@ -8,6 +8,7 @@ Modules available in 2.10.6rc1.a0 version:
 - fetch
 - file
 - find
+- get_url
 - lineinfile
 - ping
 - pip
@@ -16,6 +17,9 @@ Modules available in 2.10.6rc1.a0 version:
 - slurp
 - stat
 - tempfile
+- template
+- uri
+- wait_for_connection
 
 - add_host
 - assert
