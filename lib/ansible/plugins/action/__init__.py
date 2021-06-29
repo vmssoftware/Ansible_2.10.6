@@ -902,6 +902,9 @@ class ActionBase(with_metaclass(ABCMeta, object)):
 
         environment_string = self._compute_environment_string()
 
+        if getattr(self._connection._shell, "_IS_OPENVMS", False) and environment_string:
+            environment_string = environment_string + " ;"
+
         # remove the ANSIBLE_ASYNC_DIR env entry if we added a temporary one for
         # the async_wrapper task - this is so the async_status plugin doesn't
         # fire a deprecation warning when it runs after this task
@@ -938,7 +941,7 @@ class ActionBase(with_metaclass(ABCMeta, object)):
             async_cmd = [interpreter, remote_async_module_path, async_jid, async_limit, remote_module_path]
 
             if environment_string:
-                async_cmd.insert(0, environment_string + " ;")
+                async_cmd.insert(0, environment_string)
 
             if args_file_path:
                 async_cmd.append(args_file_path)
