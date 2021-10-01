@@ -2794,6 +2794,8 @@ class AnsibleModule(object):
                 cmd.stdout.close()
                 cmd.stderr.close()
                 selector.close()
+
+                rc = cmd.returncode
             else:
                 if data:
                     if not binary_data:
@@ -2807,7 +2809,11 @@ class AnsibleModule(object):
                 if err != None:
                     stderr += err
 
-            rc = cmd.returncode
+                rc = cmd.returncode
+
+                if rc == 1 or rc == 2:
+                    rc = 0
+
         except (OSError, IOError) as e:
             self.log("Error Executing CMD:%s Exception:%s" % (self._clean_args(args), to_native(e)))
             self.fail_json(rc=e.errno, msg=to_native(e), cmd=self._clean_args(args))
