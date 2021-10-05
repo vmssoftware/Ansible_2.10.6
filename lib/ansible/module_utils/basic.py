@@ -2811,8 +2811,9 @@ class AnsibleModule(object):
 
                 rc = cmd.returncode
 
-                if rc == 1 or rc == 2:
-                    rc = 0
+                if out != None:
+                    if '%DIRECT-W-NOFILES, no files found' in out.decode('utf-8'):
+                        rc = 0
 
         except (OSError, IOError) as e:
             self.log("Error Executing CMD:%s Exception:%s" % (self._clean_args(args), to_native(e)))

@@ -1099,7 +1099,7 @@ class Connection(ConnectionBase):
                 num = int(status, 16)
                 self._shell.vms_status = num
 
-                if num & 0x7 == 2 or num & 0x7 == 4: #error
+                if num & 0x1 == 0 and num != 268534416: #error
                     returncode = num
                 return returncode, stdout
 
