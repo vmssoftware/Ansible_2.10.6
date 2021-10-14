@@ -2884,3 +2884,40 @@ class AnsibleModule(object):
 
 def get_module_path():
     return os.path.dirname(os.path.realpath(__file__))
+
+
+def unix_path_to_vms(path, type, ellipsis=False):
+    symbols = ['^', ',', ';', '[', ']', '%', '&']
+
+    for symbol in symbols:
+        path = path.replace(symbol, '^' + symbol)
+
+    items = path.split('/')
+    path_vms = ''
+    file_name = ''
+    shift = 1
+
+    if ellipsis:
+        ellipsis_w = '...'
+    else:
+        ellipsis_w = ''
+
+    if type != 'directory':
+        shift = 2
+
+    for i in range(len(items)-shift+1):
+        if items[i] != '':
+            items[i] = items[i].replace('.', '^.')
+            if path_vms == '':
+                path_vms += items[i] + ':['
+            else:
+                if i == len(items)-shift:
+                    path_vms += items[i] + ellipsis_w +']'
+                else:
+                    path_vms += items[i] + '.'
+
+    if type != 'directory':
+        count_dot = items[len(items)-1].count('.')
+        file_name = items[len(items)-1].replace('.', '^.', count_dot-1)
+
+    return path_vms + file_name

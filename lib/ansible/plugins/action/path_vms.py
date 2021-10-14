@@ -2,41 +2,12 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 from ansible.plugins.action import ActionBase
+from ansible.module_utils.parsing.convert_bool import boolean
+from ansible.module_utils.basic import unix_path_to_vms
 
 
 class ActionModule(ActionBase):
     TRANSFERS_FILES = False
-
-    def unix_path_to_vms(self, path, type):
-        symbols = ['^', ',', ';', '[', ']', '%', '&']
-
-        for symbol in symbols:
-            path = path.replace(symbol, '^' + symbol)
-
-        items = path.split('/')
-        path_vms = ''
-        file_name = ''
-        shift = 1
-
-        if type != 'directory':
-            shift = 2
-
-        for i in range(len(items)-shift+1):
-            if items[i] != '':
-                items[i] = items[i].replace('.', '^.')
-                if path_vms == '':
-                    path_vms += items[i] + ':['
-                else:
-                    if i == len(items)-shift:
-                        path_vms += items[i] + ']'
-                    else:
-                        path_vms += items[i] + '.'
-
-        if type != 'directory':
-            count_dot = items[len(items)-1].count('.')
-            file_name = items[len(items)-1].replace('.', '^.', count_dot-1)
-
-        return path_vms + file_name
 
     def run(self, tmp=None, task_vars=None):
         if task_vars is None:
@@ -47,6 +18,7 @@ class ActionModule(ActionBase):
 
         unix_path = self._task.args.get('path')
         unix_file_type = self._task.args.get('file_type')
+        use_ellipsis = boolean(self._task.args.get('use_ellipsis', False), strict=False)
 
         if unix_path:
             if unix_file_type:
@@ -63,7 +35,7 @@ class ActionModule(ActionBase):
             if path.count('/') > 0:
                 if path.startswith('/'): # absolute path
                     result['changed'] = True
-                    result['path'] = self.unix_path_to_vms(unix_path, unix_file_type)
+                    result['path'] = unix_path_to_vms(unix_path, unix_file_type, use_ellipsis)
                 else:
                     # relative path
                     result['failed'] = True
