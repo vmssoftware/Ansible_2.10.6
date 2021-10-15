@@ -282,6 +282,7 @@ from distutils.version import LooseVersion
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.six import b, string_types
 from ansible.module_utils._text import to_native, to_text
+from ansible.module_utils.basic import unix_path_to_vms
 
 
 def relocate_repo(module, result, repo_dir, old_repo_dir, worktree_dir):
@@ -464,45 +465,54 @@ def clone(git_path, module, repo, dest, remote, depth, version, bare,
         pass
     cmd = [git_path, 'clone']
 
-    if bare:
-        cmd.append('--bare')
-    else:
-        cmd.extend(['--origin', remote])
-    if depth:
-        if version == 'HEAD' or refspec:
-            cmd.extend(['--depth', str(depth)])
-        elif is_remote_branch(git_path, module, dest, repo, version) \
-                or is_remote_tag(git_path, module, dest, repo, version):
-            cmd.extend(['--depth', str(depth)])
-            cmd.extend(['--branch', version])
+    if sys.platform != 'OpenVMS':
+        if bare:
+            cmd.append('--bare')
         else:
-            # only use depth if the remote object is branch or tag (i.e. fetchable)
-            module.warn("Ignoring depth argument. "
-                        "Shallow clones are only available for "
-                        "HEAD, branches, tags or in combination with refspec.")
-    if reference:
+            cmd.extend(['--origin', remote])
+    if depth:
+        if sys.platform == 'OpenVMS':
+            if is_remote_branch(git_path, module, dest, repo, version) \
+                    or is_remote_tag(git_path, module, dest, repo, version):
+                cmd.extend(['-b', version])
+        else:
+            if version == 'HEAD' or refspec:
+                cmd.extend(['--depth', str(depth)])
+            elif is_remote_branch(git_path, module, dest, repo, version) \
+                    or is_remote_tag(git_path, module, dest, repo, version):
+                cmd.extend(['--depth', str(depth)])
+                cmd.extend(['--branch', version])
+            else:
+                # only use depth if the remote object is branch or tag (i.e. fetchable)
+                module.warn("Ignoring depth argument. "
+                            "Shallow clones are only available for "
+                            "HEAD, branches, tags or in combination with refspec.")
+    if reference and sys.platform != 'OpenVMS':
         cmd.extend(['--reference', str(reference)])
     needs_separate_git_dir_fallback = False
 
     if separate_git_dir:
-        git_version_used = git_version(git_path, module)
-        if git_version_used is None:
-            module.fail_json(msg='Can not find git executable at %s' % git_path)
-        if git_version_used < LooseVersion('1.7.5'):
-            # git before 1.7.5 doesn't have separate-git-dir argument, do fallback
+        if sys.platform == 'OpenVMS':
             needs_separate_git_dir_fallback = True
         else:
-            cmd.append('--separate-git-dir=%s' % separate_git_dir)
+            git_version_used = git_version(git_path, module)
+            if git_version_used is None:
+                module.fail_json(msg='Can not find git executable at %s' % git_path)
+            if git_version_used < LooseVersion('1.7.5'):
+                # git before 1.7.5 doesn't have separate-git-dir argument, do fallback
+                needs_separate_git_dir_fallback = True
+            else:
+                cmd.append('--separate-git-dir=%s' % separate_git_dir)
 
     cmd.extend([repo, dest])
     module.run_command(cmd, check_rc=True, cwd=dest_dirname)
     if needs_separate_git_dir_fallback:
         relocate_repo(module, result, separate_git_dir, os.path.join(dest, ".git"), dest)
 
-    if bare and remote != 'origin':
+    if (bare or sys.platform == 'OpenVMS') and remote != 'origin':
         module.run_command([git_path, 'remote', 'add', remote, repo], check_rc=True, cwd=dest)
 
-    if refspec:
+    if refspec and sys.platform != 'OpenVMS':
         cmd = [git_path, 'fetch']
         if depth:
             cmd.extend(['--depth', str(depth)])
@@ -517,7 +527,10 @@ def has_local_mods(module, git_path, dest, bare):
     if bare:
         return False
 
-    cmd = "%s status --porcelain" % (git_path)
+    if sys.platform == 'OpenVMS':
+        cmd = "%s status -f porcelain" % (git_path)
+    else:
+        cmd = "%s status --porcelain" % (git_path)
     rc, stdout, stderr = module.run_command(cmd, cwd=dest)
     lines = stdout.splitlines()
     lines = list(filter(lambda c: not re.search('^\\?\\?.*$', c), lines))
@@ -609,6 +622,13 @@ def is_remote_tag(git_path, module, dest, remote, version):
     else:
         return False
 
+def is_tag(git_path, module, dest, tag):
+    cmd = '%s tag list' % (git_path)
+    (rc, out, err) = module.run_command(cmd, check_rc=True, cwd=dest)
+    if to_native(tag, errors='surrogate_or_strict') in out:
+        return True
+    else:
+        return False
 
 def get_branches(git_path, module, dest):
     branches = []
@@ -639,6 +659,10 @@ def get_annotated_tags(git_path, module, dest):
 def is_remote_branch(git_path, module, dest, remote, version):
     cmd = '%s ls-remote %s -h refs/heads/%s' % (git_path, remote, version)
     (rc, out, err) = module.run_command(cmd, check_rc=True, cwd=dest)
+
+    if sys.platform == 'OpenVMS':
+        version = 'refs/heads/' + version
+
     if to_native(version, errors='surrogate_or_strict') in out:
         return True
     else:
@@ -771,12 +795,13 @@ def fetch(git_path, module, repo, dest, version, remote, depth, bare, refspec, g
             refspecs.append('+refs/heads/%s:refs/remotes/%s/%s' % (version, remote, version))
         elif is_remote_tag(git_path, module, dest, repo, version):
             refspecs.append('+refs/tags/' + version + ':refs/tags/' + version)
-        if refspecs:
-            # if refspecs is empty, i.e. version is neither heads nor tags
-            # assume it is a version hash
-            # fall back to a full clone, otherwise we might not be able to checkout
-            # version
-            fetch_cmd.extend(['--depth', str(depth)])
+        if sys.platform != 'OpenVMS':
+            if refspecs:
+                # if refspecs is empty, i.e. version is neither heads nor tags
+                # assume it is a version hash
+                # fall back to a full clone, otherwise we might not be able to checkout
+                # version
+                fetch_cmd.extend(['--depth', str(depth)])
 
     if not depth or not refspecs:
         # don't try to be minimalistic but do a full clone
@@ -784,22 +809,29 @@ def fetch(git_path, module, repo, dest, version, remote, depth, bare, refspec, g
         if bare:
             refspecs = ['+refs/heads/*:refs/heads/*', '+refs/tags/*:refs/tags/*']
         else:
-            # ensure all tags are fetched
-            if git_version_used >= LooseVersion('1.9'):
-                fetch_cmd.append('--tags')
+            if sys.platform == 'OpenVMS':
+                fetch_cmd.append('-t')
             else:
-                # old git versions have a bug in --tags that prevents updating existing tags
-                commands.append((fetch_str, fetch_cmd + [remote]))
-                refspecs = ['+refs/tags/*:refs/tags/*']
+                # ensure all tags are fetched
+                if git_version_used >= LooseVersion('1.9'):
+                    fetch_cmd.append('--tags')
+                else:
+                    # old git versions have a bug in --tags that prevents updating existing tags
+                    commands.append((fetch_str, fetch_cmd + [remote]))
+                    refspecs = ['+refs/tags/*:refs/tags/*']
         if refspec:
             refspecs.append(refspec)
 
-    if force:
-        fetch_cmd.append('--force')
+    if sys.platform != 'OpenVMS':
+        if force:
+            fetch_cmd.append('-f')
 
     fetch_cmd.extend([remote])
 
-    commands.append((fetch_str, fetch_cmd + refspecs))
+    if sys.platform == 'OpenVMS':
+        commands.append((fetch_str, fetch_cmd))
+    else:
+        commands.append((fetch_str, fetch_cmd + refspecs))
 
     for (label, command) in commands:
         (rc, out, err) = module.run_command(command, cwd=dest)
@@ -861,14 +893,18 @@ def submodule_update(git_path, module, dest, track_submodules, force=False):
     # skip submodule commands if .gitmodules is not present
     if not os.path.exists(os.path.join(dest, '.gitmodules')):
         return (0, '', '')
-    cmd = [git_path, 'submodule', 'sync']
-    (rc, out, err) = module.run_command(cmd, check_rc=True, cwd=dest)
+    if sys.platform != 'OpenVMS':
+        cmd = [git_path, 'submodule', 'sync']
+        (rc, out, err) = module.run_command(cmd, check_rc=True, cwd=dest)
     if 'remote' in params and track_submodules:
         cmd = [git_path, 'submodule', 'update', '--init', '--recursive', '--remote']
     else:
         cmd = [git_path, 'submodule', 'update', '--init', '--recursive']
     if force:
-        cmd.append('--force')
+        if sys.platform == 'OpenVMS':
+            cmd.append('-f')
+        else:
+            cmd.append('--force')
     (rc, out, err) = module.run_command(cmd, cwd=dest)
     if rc != 0:
         module.fail_json(msg="Failed to init/update submodules: %s" % out + err)
@@ -894,7 +930,10 @@ def switch_version(git_path, module, dest, remote, version, verify_commit, depth
     cmd = ''
     if version == 'HEAD':
         branch = get_head_branch(git_path, module, dest, remote)
-        (rc, out, err) = module.run_command("%s checkout --force %s" % (git_path, branch), cwd=dest)
+        if sys.platform == 'OpenVMS':
+            (rc, out, err) = module.run_command("%s checkout -f %s" % (git_path, branch), cwd=dest)
+        else:
+            (rc, out, err) = module.run_command("%s checkout --force %s" % (git_path, branch), cwd=dest)
         if rc != 0:
             module.fail_json(msg="Failed to checkout branch %s" % branch,
                              stdout=out, stderr=err, rc=rc)
@@ -908,14 +947,26 @@ def switch_version(git_path, module, dest, remote, version, verify_commit, depth
                 # fetch the remote branch, to be able to check it out next
                 set_remote_branch(git_path, module, dest, remote, version, depth)
             if not is_local_branch(git_path, module, dest, version):
-                cmd = "%s checkout --track -b %s %s/%s" % (git_path, version, remote, version)
+                if sys.platform != 'OpenVMS':
+                    cmd = "%s checkout --track -b %s %s/%s" % (git_path, version, remote, version)
+                else:
+                    cmd = "%s checkout -f -b %s %s/%s" % (git_path, version, remote, version)
             else:
-                (rc, out, err) = module.run_command("%s checkout --force %s" % (git_path, version), cwd=dest)
+                if sys.platform != 'OpenVMS':
+                    (rc, out, err) = module.run_command("%s checkout --force %s" % (git_path, version), cwd=dest)
+                else:
+                    (rc, out, err) = module.run_command("%s checkout -f %s" % (git_path, version), cwd=dest)
                 if rc != 0:
                     module.fail_json(msg="Failed to checkout branch %s" % version, stdout=out, stderr=err, rc=rc)
                 cmd = "%s reset --hard %s/%s" % (git_path, remote, version)
         else:
-            cmd = "%s checkout --force %s" % (git_path, version)
+            if sys.platform != 'OpenVMS':
+                cmd = "%s checkout --force %s" % (git_path, version)
+            else:
+                if is_tag(git_path, module, dest, version):
+                    cmd = "%s checkout -t %s" % (git_path, version)
+                else:
+                    cmd = "%s checkout -c %s" % (git_path, version)
     (rc, out1, err1) = module.run_command(cmd, cwd=dest)
     if rc != 0:
         if version != 'HEAD':
@@ -967,7 +1018,10 @@ def get_gpg_fingerprint(output):
 
 def git_version(git_path, module):
     """return the installed version of git"""
-    cmd = "%s --version" % git_path
+    if sys.platform == 'OpenVMS':
+        cmd = "%s version" % git_path
+    else:
+        cmd = "%s --version" % git_path
     (rc, out, err) = module.run_command(cmd)
     if rc != 0:
         # one could fail_json here, but the version info is not that important,
@@ -981,10 +1035,13 @@ def git_version(git_path, module):
 
 def git_archive(git_path, module, dest, archive, archive_fmt, archive_prefix, version):
     """ Create git archive in given source directory """
+    if sys.platform == 'OpenVMS':
+        archive = unix_path_to_vms(archive, 'file')
     cmd = [git_path, 'archive', '--format', archive_fmt, '--output', archive, version]
-    if archive_prefix is not None:
-        cmd.insert(-1, '--prefix')
-        cmd.insert(-1, archive_prefix)
+    if sys.platform != 'OpenVMS':
+        if archive_prefix is not None:
+            cmd.insert(-1, '--prefix')
+            cmd.insert(-1, archive_prefix)
     (rc, out, err) = module.run_command(cmd, cwd=dest)
     if rc != 0:
         module.fail_json(msg="Failed to perform archive operation",
@@ -996,8 +1053,11 @@ def git_archive(git_path, module, dest, archive, archive_fmt, archive_prefix, ve
 
 def create_archive(git_path, module, dest, archive, archive_prefix, version, repo, result):
     """ Helper function for creating archive using git_archive """
-    all_archive_fmt = {'.zip': 'zip', '.gz': 'tar.gz', '.tar': 'tar',
-                       '.tgz': 'tgz'}
+    if sys.platform == 'OpenVMS':
+        all_archive_fmt = {'.zip': 'zip', '.tar': 'tar'}
+    else:
+        all_archive_fmt = {'.zip': 'zip', '.gz': 'tar.gz', '.tar': 'tar',
+                            '.tgz': 'tgz'}
     _, archive_ext = os.path.splitext(archive)
     archive_fmt = all_archive_fmt.get(archive_ext, None)
     if archive_fmt is None:
@@ -1089,7 +1149,10 @@ def main():
     verify_commit = module.params['verify_commit']
     gpg_whitelist = module.params['gpg_whitelist']
     reference = module.params['reference']
-    git_path = module.params['executable'] or module.get_bin_path('git', True)
+    if sys.platform != 'OpenVMS':
+        git_path = module.params['executable'] or module.get_bin_path('git', True)
+    else:
+        git_path = 'git'
     key_file = module.params['key_file']
     ssh_opts = module.params['ssh_opts']
     umask = module.params['umask']
@@ -1160,8 +1223,11 @@ def main():
 
     git_version_used = git_version(git_path, module)
 
-    if depth is not None and git_version_used < LooseVersion('1.9.1'):
-        result['warnings'].append("Your git version is too old to fully support the depth argument. Falling back to full checkouts.")
+    if sys.platform != 'OpenVMS':
+        if depth is not None and git_version_used < LooseVersion('1.9.1'):
+            result['warnings'].append("Your git version is too old to fully support the depth argument. Falling back to full checkouts.")
+            depth = None
+    else:
         depth = None
 
     recursive = module.params['recursive']
