@@ -20,6 +20,7 @@ Modules available in 2.10.6rc1.a0 version:
 - template
 - uri
 - wait_for_connection
+- git (Ensure that the symbol "git" is defined in your login.com)
 
 - add_host
 - assert
