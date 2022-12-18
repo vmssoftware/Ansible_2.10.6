@@ -181,7 +181,26 @@ def extract_sdist(sdist_path, tmp_dir):
     """Untar the sdist"""
     # Untar the sdist from the tmp_dir
     with tarfile.open(os.path.join(tmp_dir, sdist_path), 'r|*') as sdist:
-        sdist.extractall(path=tmp_dir)
+        def is_within_directory(directory, target):
+            
+            abs_directory = os.path.abspath(directory)
+            abs_target = os.path.abspath(target)
+        
+            prefix = os.path.commonprefix([abs_directory, abs_target])
+            
+            return prefix == abs_directory
+        
+        def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+        
+            for member in tar.getmembers():
+                member_path = os.path.join(path, member.name)
+                if not is_within_directory(path, member_path):
+                    raise Exception("Attempted Path Traversal in Tar File")
+        
+            tar.extractall(path, members, numeric_owner=numeric_owner) 
+            
+        
+        safe_extract(sdist, path=tmp_dir)
 
     # Determine the sdist directory name
     sdist_filename = os.path.basename(sdist_path)
